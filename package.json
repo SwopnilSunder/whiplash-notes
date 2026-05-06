@@ -1,0 +1,33 @@
+{
+  "name": "whiplash-notes",
+  "version": "1.0.0",
+  "description": "Ultra-minimalist always-on-top note app for Windows 11",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win portable"
+  },
+  "build": {
+    "appId": "com.whiplash.notes",
+    "productName": "Whiplash Notes",
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": "portable",
+      "icon": "icon.ico"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "index.html",
+      "style.css",
+      "renderer.js",
+      "icon.ico"
+    ]
+  },
+  "devDependencies": {
+    "electron": "^29.0.0",
+    "electron-builder": "^24.0.0"
+  }
+}

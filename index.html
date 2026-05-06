@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Notes</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <div id="app">
+
+    <!-- Thin drag strip at very top -->
+    <div id="drag-handle"></div>
+
+    <!-- ── Toolbar ─────────────────────────────────────────────────────────── -->
+    <div id="toolbar">
+
+      <!-- Left: new + delete -->
+      <div class="toolbar-cluster" id="cluster-actions">
+        <button id="btn-new"    class="icon-btn" title="New note (Ctrl+N)">
+          <span aria-hidden="true">+</span>
+        </button>
+        <button id="btn-delete" class="icon-btn" title="Delete current note">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="2.2"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <polyline points="3 6 5 6 21 6"/>
+            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+            <path d="M10 11v6M14 11v6M9 6V4h6v2"/>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Centre: B / I / U / S pill -->
+      <div class="toolbar-cluster" id="cluster-format">
+        <button class="fmt-btn" data-cmd="bold"          title="Bold (Ctrl+B)"><b>B</b></button>
+        <button class="fmt-btn" data-cmd="italic"        title="Italic (Ctrl+I)"><i>I</i></button>
+        <button class="fmt-btn" data-cmd="underline"     title="Underline (Ctrl+U)"><u>U</u></button>
+        <button class="fmt-btn" data-cmd="strikeThrough" title="Strikethrough"><s>S</s></button>
+      </div>
+
+      <!-- Right: font size + sidebar toggle -->
+      <div class="toolbar-cluster" id="cluster-right">
+        <input id="font-size" type="number" value="14" min="8" max="72"
+               title="Font size" aria-label="Font size" />
+        <button id="btn-sidebar" class="icon-btn" title="Toggle notes list">
+          <!-- Hamburger icon -->
+          <svg width="14" height="12" viewBox="0 0 14 12" fill="none"
+               stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" aria-hidden="true">
+            <line x1="1" y1="1"  x2="13" y2="1"/>
+            <line x1="1" y1="6"  x2="13" y2="6"/>
+            <line x1="1" y1="11" x2="13" y2="11"/>
+          </svg>
+        </button>
+      </div>
+
+    </div><!-- /toolbar -->
+
+    <!-- ── Main area (editor + sidebar side by side) ──────────────────────── -->
+    <div id="main-area">
+
+      <div id="editor"
+           contenteditable="true"
+           spellcheck="true"
+           data-placeholder="Start typing…"
+           role="textbox"
+           aria-multiline="true"
+           aria-label="Note editor"></div>
+
+      <!-- Sidebar — hidden by default, toggled with #btn-sidebar -->
+      <div id="sidebar">
+        <div id="sidebar-header">All Notes</div>
+        <div id="notes-list">
+          <!-- Populated by renderer.js -->
+        </div>
+      </div>
+
+    </div><!-- /main-area -->
+
+    <!-- ── Status bar ─────────────────────────────────────────────────────── -->
+    <div id="status-bar">
+      <span id="status-text" title="Click to toggle Always on Top">● Always on Top</span>
+    </div>
+
+  </div><!-- /app -->
+
+  <script src="renderer.js"></script>
+</body>
+</html>

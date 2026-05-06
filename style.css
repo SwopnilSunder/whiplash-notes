@@ -1,0 +1,235 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   style.css  –  Dark theme, rounded frameless window, sidebar, AOT toggle
+   ───────────────────────────────────────────────────────────────────────────── */
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:            #1c1c1e;
+  --bg-toolbar:    #232325;
+  --bg-pill:       #2c2c2e;
+  --bg-pill-hover: #3a3a3c;
+  --bg-sidebar:    #1a1a1c;
+  --bg-note-hover: #2a2a2c;
+  --bg-note-active:#2f2f32;
+  --text:          #e8e8ea;
+  --text-dim:      #55555a;
+  --text-toolbar:  #aeaeb2;
+  --text-sidebar:  #c8c8ca;
+  --accent-green:  #30d158;
+  --border:        rgba(255,255,255,0.07);
+  --font:          'Segoe UI', system-ui, -apple-system, Helvetica, Arial, sans-serif;
+  --radius-window: 12px;
+  --radius-pill:    6px;
+  --radius-btn:     5px;
+}
+
+html, body {
+  width: 100%; height: 100%;
+  overflow: hidden;
+  background: transparent;
+  user-select: none;
+}
+
+/* ── App shell ───────────────────────────────────────────────────────────────  */
+#app {
+  display: flex; flex-direction: column;
+  width: 100%; height: 100vh;
+  background:    var(--bg);
+  border-radius: var(--radius-window);
+  border:        1px solid var(--border);
+  overflow:      hidden;
+  box-shadow:    0 8px 32px rgba(0,0,0,0.6);
+}
+
+/* ── Drag handle ─────────────────────────────────────────────────────────────  */
+#drag-handle {
+  height: 5px; flex-shrink: 0;
+  -webkit-app-region: drag;
+  border-radius: var(--radius-window) var(--radius-window) 0 0;
+}
+
+/* ── Toolbar ─────────────────────────────────────────────────────────────────  */
+#toolbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 10px; gap: 8px;
+  background:  var(--bg-toolbar);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  -webkit-app-region: drag;
+}
+
+#toolbar button, #toolbar input { -webkit-app-region: no-drag; }
+
+.toolbar-cluster { display: flex; align-items: center; gap: 4px; }
+
+/* Icon buttons (+ and bin) */
+.icon-btn {
+  display: flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px;
+  background: transparent; border: none; border-radius: var(--radius-btn);
+  color: var(--text-toolbar);
+  font-family: var(--font); font-size: 18px; line-height: 1;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.icon-btn:hover  { background: var(--bg-pill-hover); color: var(--text); }
+.icon-btn:active { background: #48484a; }
+#btn-new span    { position: relative; top: -1px; }
+
+/* Active state for sidebar button */
+#btn-sidebar.active { background: var(--bg-pill-hover); color: var(--text); }
+
+/* Format pill */
+#cluster-format {
+  background: var(--bg-pill); border-radius: var(--radius-pill);
+  padding: 2px; gap: 1px;
+}
+.fmt-btn {
+  display: flex; align-items: center; justify-content: center;
+  width: 30px; height: 26px;
+  background: transparent; border: none; border-radius: 4px;
+  color: var(--text-toolbar);
+  font-family: var(--font); font-size: 13px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.fmt-btn:hover  { background: var(--bg-pill-hover); color: var(--text); }
+.fmt-btn:active, .fmt-btn.active { background: #48484a; color: var(--text); }
+.fmt-btn b  { font-weight: 700; }
+.fmt-btn i  { font-style: italic; }
+.fmt-btn u  { text-decoration: underline; }
+.fmt-btn s  { text-decoration: line-through; }
+
+/* Font size input */
+#font-size {
+  width: 46px; height: 28px;
+  background: var(--bg-pill); border: none; border-radius: var(--radius-btn);
+  color: var(--text); font-family: var(--font); font-size: 12px;
+  text-align: center; outline: none; cursor: text;
+  transition: background 0.12s;
+}
+#font-size:focus { background: var(--bg-pill-hover); }
+#font-size::-webkit-inner-spin-button,
+#font-size::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+
+/* ── Main area: editor + sidebar ─────────────────────────────────────────────  */
+#main-area {
+  display: flex; flex: 1; overflow: hidden;
+}
+
+/* ── Editor ──────────────────────────────────────────────────────────────────  */
+#editor {
+  flex: 1;
+  padding:     20px 24px 16px;
+  color:       var(--text);
+  font-family: var(--font); font-size: 14px; line-height: 1.75;
+  outline:     none;
+  overflow-y:  auto; overflow-x: hidden;
+  word-wrap:   break-word;
+  user-select: text;
+  caret-color: #636366;
+  white-space: pre-wrap;
+  min-width:   0;  /* flex child must not overflow */
+}
+#editor:empty::before {
+  content: attr(data-placeholder);
+  color: var(--text-dim);
+  pointer-events: none;
+}
+#editor::-webkit-scrollbar       { width: 4px; }
+#editor::-webkit-scrollbar-track { background: transparent; }
+#editor::-webkit-scrollbar-thumb { background: #3a3a3c; border-radius: 2px; }
+#editor::-webkit-scrollbar-thumb:hover { background: #48484a; }
+#editor b, #editor strong { font-weight: 700; }
+#editor i, #editor em     { font-style: italic; }
+#editor u                 { text-decoration: underline; }
+#editor s, #editor del    { text-decoration: line-through; }
+
+/* ── Sidebar ─────────────────────────────────────────────────────────────────
+   Width:0 → closed, width:190px → open, animated with CSS transition.       */
+#sidebar {
+  width: 0;
+  overflow: hidden;
+  background:    var(--bg-sidebar);
+  border-left:   0px solid var(--border);
+  transition:    width 0.2s ease, border-left-width 0.2s ease;
+  flex-shrink:   0;
+  display:       flex;
+  flex-direction: column;
+}
+#sidebar.open {
+  width:           190px;
+  border-left:     1px solid var(--border);
+}
+
+#sidebar-header {
+  padding:       10px 12px 6px;
+  font-family:   var(--font); font-size: 10px; font-weight: 600;
+  color:         var(--text-dim);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  flex-shrink:   0;
+  border-bottom: 1px solid var(--border);
+}
+
+#notes-list {
+  flex: 1; overflow-y: auto; overflow-x: hidden;
+}
+#notes-list::-webkit-scrollbar       { width: 3px; }
+#notes-list::-webkit-scrollbar-track { background: transparent; }
+#notes-list::-webkit-scrollbar-thumb { background: #3a3a3c; border-radius: 2px; }
+
+/* Individual note item in the sidebar */
+.note-item {
+  padding:       9px 12px 8px;
+  cursor:        pointer;
+  border-bottom: 1px solid var(--border);
+  user-select:   none;
+  transition:    background 0.1s;
+}
+.note-item:hover   { background: var(--bg-note-hover); }
+.note-item.active  { background: var(--bg-note-active); }
+
+.note-item-title {
+  font-family: var(--font); font-size: 11.5px; font-weight: 500;
+  color:       var(--text-sidebar);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  line-height: 1.4;
+}
+.note-date {
+  font-size: 10.5px; color: var(--text-dim);
+}
+.note-item-sub {
+  font-family: var(--font); font-size: 10.5px;
+  color:       var(--text-dim);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  margin-top:  2px;
+  line-height: 1.3;
+}
+
+/* ── Status bar ──────────────────────────────────────────────────────────────  */
+#status-bar {
+  display: flex; justify-content: flex-end; align-items: center;
+  padding:     4px 14px 6px;
+  background:  var(--bg-toolbar);
+  border-top:  1px solid var(--border);
+  border-radius: 0 0 var(--radius-window) var(--radius-window);
+  flex-shrink: 0;
+}
+
+/* Make the AOT text feel like a clickable toggle */
+#status-text {
+  font-family: var(--font); font-size: 10px;
+  color:       var(--text-dim);
+  letter-spacing: 0.02em;
+  cursor:      pointer;
+  border-radius: 4px;
+  padding:     2px 6px;
+  transition:  color 0.15s, background 0.15s;
+  user-select: none;
+}
+#status-text:hover           { background: var(--bg-pill); color: var(--text-toolbar); }
+#status-text.aot-on          { color: var(--accent-green); }
+#status-text.aot-on:hover    { background: var(--bg-pill); color: var(--accent-green); }
+#status-text.aot-off         { color: var(--text-dim); }
