@@ -1,0 +1,67 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   lib/prism-vscode-dark.css  –  VS Code Dark+ token colours for Prism
+   Token class names match Prism's standard so this works with any Prism build.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* Base code colours */
+code[class*="language-"],
+pre[class*="language-"] {
+  color:       #d4d4d4;
+  background:  transparent;
+  font-family: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', Consolas, 'Courier New', monospace;
+  font-size:   12.5px;
+  line-height: 1.6;
+  white-space: pre;
+  tab-size:    4;
+}
+
+/* ── Token colours ───────────────────────────────────────────────────────────
+   VS Code Dark+ palette:
+     keyword     #569cd6  blue
+     string      #ce9178  warm orange
+     comment     #6a9955  muted green (italic)
+     number      #b5cea8  light green
+     function    #dcdcaa  yellow
+     class-name  #4ec9b0  teal
+     variable    #9cdcfe  light blue
+     operator    #d4d4d4  plain text
+     punctuation #d4d4d4  plain text
+     special     #c586c0  magenta (directives, decorators)
+   ─────────────────────────────────────────────────────────────────────────── */
+
+.token.comment    { color: #6a9955; font-style: italic; }
+.token.string     { color: #ce9178; }
+.token.regex      { color: #d16969; }
+.token.number     { color: #b5cea8; }
+.token.boolean    { color: #569cd6; }
+.token.keyword    { color: #569cd6; }
+.token.function   { color: #dcdcaa; }
+.token.class-name { color: #4ec9b0; }
+.token.builtin    { color: #4ec9b0; }
+.token.variable   { color: #9cdcfe; }
+.token.operator   { color: #d4d4d4; }
+.token.punctuation{ color: #d4d4d4; }
+
+/* Language-specific tokens */
+.token.directive  { color: #c586c0; }   /* C/C++ preprocessor directives */
+.token.decorator  { color: #dcdcaa; }   /* Python @decorator */
+.token.annotation { color: #dcdcaa; }   /* Java @Annotation */
+.token.attribute  { color: #dcdcaa; }   /* Rust #[attribute] */
+.token.macro      { color: #dcdcaa; }   /* Rust macro! */
+.token.symbol     { color: #d7ba7d; }   /* Ruby :symbol */
+.token.lifetime   { color: #d7ba7d; }   /* Rust 'lifetime */
+.token.key        { color: #9cdcfe; }   /* YAML key: */
+.token.anchor     { color: #dcdcaa; }   /* YAML &anchor / *alias */
+.token.tag        { color: #569cd6; }   /* HTML/YAML tags */
+
+/* Markdown tokens */
+.token.title      { color: #569cd6; font-weight: 700; }
+.token.bold       { font-weight: 700; }
+.token.italic     { font-style: italic; }
+.token.code       { color: #ce9178; }
+.token.code-block { color: #ce9178; }
+.token.blockquote { color: #6a9955; }
+.token.list       { color: #d4d4d4; }
+.token.hr         { color: #555555; }
+.token.url,
+.token.link       { color: #569cd6; text-decoration: underline; }

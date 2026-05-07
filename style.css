@@ -313,3 +313,114 @@ mark.highlight.active {
 #status-text.aot-on          { color: var(--accent-green); }
 #status-text.aot-on:hover    { background: var(--bg-pill); color: var(--accent-green); }
 #status-text.aot-off         { color: var(--text-dim); }
+
+/* ── Code blocks ─────────────────────────────────────────────────────────────
+   Structure:
+     .code-block                 ← outer wrapper, contenteditable=false
+       .code-block-header        ← lang label + copy button
+       .code-block-body          ← positioned container
+         .code-pre               ← highlighted pre (in flow, drives height)
+           code.language-*
+         .code-textarea          ← transparent input overlay (absolute)
+   ─────────────────────────────────────────────────────────────────────────── */
+
+.code-block {
+  display:       block;
+  margin:        10px 0;
+  border-radius: 6px;
+  overflow:      hidden;
+  border:        1px solid rgba(255,255,255,0.10);
+  background:    #1e1e1e;
+  font-family:   'Cascadia Code', 'Fira Code', 'JetBrains Mono', Consolas, 'Courier New', monospace;
+  user-select:   none;
+  -webkit-app-region: no-drag;
+}
+
+.code-block-header {
+  display:         flex;
+  align-items:     center;
+  justify-content: space-between;
+  padding:         5px 12px;
+  background:      #2d2d2d;
+  border-bottom:   1px solid rgba(255,255,255,0.07);
+}
+
+.code-lang-label {
+  font-family:    var(--font);
+  font-size:      10.5px;
+  color:          #858585;
+  letter-spacing: 0.06em;
+}
+
+.code-copy-btn {
+  font-family:   var(--font);
+  font-size:     10px;
+  color:         #858585;
+  background:    transparent;
+  border:        none;
+  cursor:        pointer;
+  padding:       2px 7px;
+  border-radius: 3px;
+  transition:    color 0.12s, background 0.12s;
+}
+.code-copy-btn:hover  { color: #d4d4d4; background: rgba(255,255,255,0.08); }
+.code-copy-btn:active { background: rgba(255,255,255,0.13); }
+.code-copy-btn.copied { color: var(--accent-green); }
+
+/* Body: relatively positioned so the textarea can overlay the pre */
+.code-block-body {
+  position:   relative;
+  min-height: 44px;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+/* Pre: in normal flow, its rendered height sets .code-block-body's height */
+.code-pre {
+  margin:     0;
+  padding:    11px 16px;
+  background: transparent;
+  overflow:   visible;
+  min-height: 44px;
+  /* pointer-events off so clicks reach the textarea */
+  pointer-events: none;
+}
+
+.code-pre code {
+  display:     block;
+  background:  transparent;
+  padding:     0;
+  border:      none;
+  font-size:   12.5px;
+  line-height: 1.6;
+  font-family: inherit;
+  white-space: pre;
+  tab-size:    4;
+}
+
+/* Textarea: transparent text on top of the pre — handles actual input */
+.code-textarea {
+  position:    absolute;
+  top:         0;
+  left:        0;
+  width:       100%;
+  height:      100%;
+  padding:     11px 16px;
+  margin:      0;
+  background:  transparent;
+  border:      none;
+  outline:     none;
+  resize:      none;
+  /* Hide text visually (caret stays visible) */
+  color:       transparent;
+  caret-color: #aeaeae;
+  font-family: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', Consolas, 'Courier New', monospace;
+  font-size:   12.5px;
+  line-height: 1.6;
+  tab-size:    4;
+  white-space: pre;
+  overflow:    hidden;
+  user-select: text;
+  -webkit-app-region: no-drag;
+}
+.code-textarea:focus { outline: none; }

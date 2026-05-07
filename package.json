@@ -23,7 +23,8 @@
       "index.html",
       "style.css",
       "renderer.js",
-      "icon.ico"
+      "icon.ico",
+      "lib/**"
     ]
   },
   "devDependencies": {

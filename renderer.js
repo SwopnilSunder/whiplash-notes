@@ -2,7 +2,7 @@
 //  renderer.js  –  All editor logic
 //
 //  Features:
-//    • Save as plain .txt (with simple markdown for bold/italic/etc.)
+//    • Save as plain .txt (markdown-lite + code fences for code blocks)
 //    • Load most recent note on startup
 //    • 400ms debounced auto-save
 //    • Sidebar listing all notes — click to switch
@@ -10,6 +10,8 @@
 //    • B/I/U/S formatting + Ctrl+B/I/U/N shortcuts
 //    • New note (+) and delete (🗑) with correct sidebar updates
 //    • Find in note — Ctrl+F, TreeWalker highlights, Prev/Next navigation
+//    • Dynamic Syntax Highlighting — type /language then Enter or Space
+//      to insert a highlighted code block (powered by lib/prism-bundle.js)
 // ─────────────────────────────────────────────────────────────────────────────
 
 'use strict';
@@ -39,49 +41,326 @@ let searchMarks     = [];    // all <mark> elements currently in the editor
 let searchIndex     = -1;   // which mark is currently active
 let statusTimer     = null;
 
-// ── Format conversion ─────────────────────────────────────────────────────────
-// Notes are saved as plain .txt with lightweight markdown so they read well
-// in Notepad, VS Code, or any other editor. Formatting round-trips cleanly.
+// ── Language aliases ──────────────────────────────────────────────────────────
+// Maps the /trigger word the user types to the canonical language key
+// used by Prism and stored in data-lang on the code block.
+const LANG_ALIASES = {
+  python:     'python',   py:         'python',
+  javascript: 'javascript', js:       'javascript',
+  typescript: 'typescript', ts:       'typescript',
+  c:          'c',
+  cpp:        'cpp',      'c++':      'cpp',
+  java:       'java',
+  bash:       'bash',     sh:         'bash',     shell: 'bash',
+  json:       'json',
+  sql:        'sql',
+  go:         'go',       golang:     'go',
+  rust:       'rust',     rs:         'rust',
+  markdown:   'markdown', md:         'markdown',
+  yaml:       'yaml',     yml:        'yaml',
+  ruby:       'ruby',     rb:         'ruby',
+  php:        'php',
+};
 
+// ── HTML escape ───────────────────────────────────────────────────────────────
+function escHtml(str) {
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ── Code block HTML factory ───────────────────────────────────────────────────
 /**
- * Convert contenteditable innerHTML → plain text with markdown markers.
- * This is what gets written to the .txt file on disk.
+ * Returns the HTML string for a code block wrapper.
+ * The initial code is stored in data-initial-code (URL-encoded) so
+ * setupCodeBlock() can read it back without needing to parse innerHTML.
  */
-function htmlToText(html) {
-  return html
-    // Block elements → newlines
-    .replace(/<div>/gi,   '\n')
-    .replace(/<\/div>/gi, '')
-    .replace(/<br\s*\/?>/gi, '\n')
-    // Inline formatting → markdown
-    .replace(/<strong>([\s\S]*?)<\/strong>/gi, '**$1**')
-    .replace(/<b>([\s\S]*?)<\/b>/gi,           '**$1**')
-    .replace(/<em>([\s\S]*?)<\/em>/gi,         '*$1*')
-    .replace(/<i>([\s\S]*?)<\/i>/gi,           '*$1*')
-    .replace(/<u>([\s\S]*?)<\/u>/gi,           '__$1__')
-    .replace(/<s>([\s\S]*?)<\/s>/gi,           '~~$1~~')
-    .replace(/<del>([\s\S]*?)<\/del>/gi,       '~~$1~~')
-    // Strip any remaining tags, decode entities
-    .replace(/<[^>]+>/g, '')
-    .replace(/&amp;/g,   '&')
-    .replace(/&lt;/g,    '<')
-    .replace(/&gt;/g,    '>')
-    .replace(/&nbsp;/g,  ' ')
+function createCodeBlockHTML(lang, code) {
+  const highlighted = (window.Prism && code)
+    ? window.Prism.highlight(code, null, lang)
+    : escHtml(code);
+  const encoded = encodeURIComponent(code);
+  return (
+    `<div class="code-block" data-lang="${lang}" contenteditable="false">` +
+      `<div class="code-block-header">` +
+        `<span class="code-lang-label">${lang}</span>` +
+        `<button class="code-copy-btn">Copy</button>` +
+      `</div>` +
+      `<div class="code-block-body">` +
+        `<pre class="code-pre language-${lang}">` +
+          `<code class="language-${lang}">${highlighted}</code>` +
+        `</pre>` +
+        `<textarea class="code-textarea" spellcheck="false" ` +
+                  `autocomplete="off" data-initial-code="${encoded}"></textarea>` +
+      `</div>` +
+    `</div>`
+  );
+}
+
+// ── Code block setup ──────────────────────────────────────────────────────────
+/**
+ * Wire up a .code-block element: populate textarea from data-initial-code,
+ * re-highlight on every keystroke, sync height, copy button.
+ */
+function setupCodeBlock(wrapper) {
+  const ta      = wrapper.querySelector('.code-textarea');
+  const codeEl  = wrapper.querySelector('code');
+  const copyBtn = wrapper.querySelector('.code-copy-btn');
+  const lang    = wrapper.dataset.lang || 'text';
+
+  // Restore code from the encoded attribute (set by createCodeBlockHTML or
+  // loaded from textToHtml after parsing a code fence from disk).
+  const initial = decodeURIComponent(ta.dataset.initialCode || '');
+  if (initial) {
+    ta.value = initial;
+    rehighlight();
+  }
+
+  function rehighlight() {
+    codeEl.innerHTML = window.Prism
+      ? window.Prism.highlight(ta.value, null, lang)
+      : escHtml(ta.value);
+    syncHeight();
+  }
+
+  function syncHeight() {
+    // Let the textarea shrink first so scrollHeight reflects real content height
+    ta.style.height = '1px';
+    ta.style.height = ta.scrollHeight + 'px';
+    // Keep the pre at least as tall so the body height covers the textarea
+    const pre = wrapper.querySelector('.code-pre');
+    pre.style.minHeight = ta.style.height;
+  }
+
+  ta.addEventListener('input', () => {
+    rehighlight();
+    scheduleSave();
+  });
+
+  ta.addEventListener('keydown', ev => {
+    // Tab → insert 4 spaces
+    if (ev.key === 'Tab') {
+      ev.preventDefault();
+      const s = ta.selectionStart;
+      const e = ta.selectionEnd;
+      ta.value = ta.value.slice(0, s) + '    ' + ta.value.slice(e);
+      ta.selectionStart = ta.selectionEnd = s + 4;
+      rehighlight();
+    }
+    // Escape → return focus to the editor
+    if (ev.key === 'Escape') {
+      editor.focus();
+    }
+  });
+
+  // Sync horizontal scroll between textarea and pre
+  ta.addEventListener('scroll', () => {
+    const pre = wrapper.querySelector('.code-pre');
+    pre.scrollTop  = ta.scrollTop;
+    pre.scrollLeft = ta.scrollLeft;
+  });
+
+  // Copy button
+  copyBtn.addEventListener('click', () => {
+    navigator.clipboard.writeText(ta.value).then(() => {
+      copyBtn.textContent = 'Copied!';
+      copyBtn.classList.add('copied');
+      setTimeout(() => {
+        copyBtn.textContent = 'Copy';
+        copyBtn.classList.remove('copied');
+      }, 1500);
+    }).catch(() => {
+      // Fallback for environments without clipboard API
+      ta.select();
+      document.execCommand('copy');
+    });
+  });
+
+  // Initial height
+  syncHeight();
+}
+
+// ── Init all code blocks ──────────────────────────────────────────────────────
+/** Called after setting editor.innerHTML — wires up every .code-block found. */
+function initCodeBlocks() {
+  editor.querySelectorAll('.code-block').forEach(setupCodeBlock);
+}
+
+// ── Code block trigger ────────────────────────────────────────────────────────
+/**
+ * Called from the editor keydown handler when Enter or Space is pressed.
+ * Checks if the current "line" in the editor is exactly /language.
+ * If so, replaces that line with a new syntax-highlighted code block.
+ * Returns true if a code block was inserted (caller should return early).
+ */
+function tryInsertCodeBlock(e) {
+  const sel = window.getSelection();
+  if (!sel || !sel.rangeCount) return false;
+  const range = sel.getRangeAt(0);
+  if (!range.collapsed) return false;
+
+  const container   = range.startContainer;
+  const cursorOffset = range.startOffset;
+
+  // Don't trigger if the cursor is inside an existing code block
+  if (container.nodeType === Node.TEXT_NODE &&
+      container.parentElement &&
+      container.parentElement.closest('.code-block')) return false;
+
+  // ── Find the direct child of the editor that contains the cursor ──
+  // In div-per-line mode each paragraph is a <div>; in pre-wrap / BR mode
+  // the text sits directly in the editor as text nodes.
+  let node = container;
+  while (node && node.parentNode !== editor) node = node.parentNode;
+
+  const lineEl = (node && node !== editor && node.nodeType === Node.ELEMENT_NODE)
+    ? node : null;
+
+  // ── Extract the text of just the current "line" ──
+  // With white-space:pre-wrap, Electron may keep everything in one text node
+  // separated by \n characters. We must look only at the text before the
+  // cursor, starting from the last newline.
+  let lineText = '';
+  if (lineEl) {
+    lineText = lineEl.textContent.trim();
+  } else if (container.nodeType === Node.TEXT_NODE) {
+    const beforeCursor = container.nodeValue.slice(0, cursorOffset);
+    const lastNL = beforeCursor.lastIndexOf('\n');
+    lineText = beforeCursor.slice(lastNL + 1).trim(); // text since last newline
+  }
+
+  // Must be exactly /language — nothing else on the line
+  const m = lineText.match(/^\/([a-z+]+)$/i);
+  if (!m) return false;
+
+  const lang = LANG_ALIASES[m[1].toLowerCase()];
+  if (!lang) return false;
+
+  e.preventDefault();
+
+  // ── Build code block and trailing blank line ──
+  const tmp = document.createElement('div');
+  tmp.innerHTML = createCodeBlockHTML(lang, '');
+  const codeBlock = tmp.firstElementChild;
+  const trail = document.createElement('div');
+  trail.appendChild(document.createElement('br'));
+
+  // ── Splice the trigger out of the DOM and insert the code block ──
+  if (lineEl) {
+    // Simple case: the trigger is an entire <div> line — just swap it out
+    lineEl.replaceWith(codeBlock);
+    codeBlock.insertAdjacentElement('afterend', trail);
+
+  } else if (container.nodeType === Node.TEXT_NODE) {
+    // Text-node case (pre-wrap / BR-separated lines):
+    // Identify what to keep before and after the trigger text.
+    const fullText = container.nodeValue;
+    const beforeCursor = fullText.slice(0, cursorOffset);
+    const lastNL = beforeCursor.lastIndexOf('\n');
+
+    // Text before the trigger line (drop the separating \n too)
+    const keepBefore = lastNL >= 0 ? fullText.slice(0, lastNL) : '';
+    // Text after the cursor on this same text node
+    const keepAfter  = fullText.slice(cursorOffset);
+
+    // Insert new nodes after the container (in reverse order so each
+    // call to .after() places the item immediately after container):
+    if (keepAfter) container.after(document.createTextNode(keepAfter));
+    container.after(trail);
+    container.after(codeBlock);
+
+    // Shrink or remove the original text node
+    if (keepBefore) {
+      container.nodeValue = keepBefore;
+    } else {
+      container.remove();
+    }
+
+  } else {
+    // Fallback (shouldn't normally be reached)
+    editor.appendChild(codeBlock);
+    editor.appendChild(trail);
+  }
+
+  setupCodeBlock(codeBlock);
+  setTimeout(() => codeBlock.querySelector('.code-textarea').focus(), 10);
+  scheduleSave();
+  return true;
+}
+
+// ── Serialise editor → plain text ─────────────────────────────────────────────
+/**
+ * Walk the editor's DOM and produce plain text with:
+ *   - **bold**, *italic*, __underline__, ~~strikethrough__ markdown markers
+ *   - ```lang\ncode\n``` fences for code blocks
+ * This replaces the old htmlToText(editor.innerHTML) approach so that code
+ * blocks (which are not in innerHTML as plain text) are handled correctly.
+ */
+function editorToText() {
+  const parts = [];
+
+  function walk(node) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      parts.push(node.nodeValue);
+      return;
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+
+    const tag = node.tagName.toLowerCase();
+
+    // Code block → code fence
+    if (node.classList && node.classList.contains('code-block')) {
+      const lang = node.dataset.lang || '';
+      const ta   = node.querySelector('.code-textarea');
+      const code = ta ? ta.value : (node.querySelector('code')?.textContent || '');
+      parts.push(`\`\`\`${lang}\n${code}\n\`\`\``);
+      return;
+    }
+
+    // Block elements → leading newline (browser wraps paragraphs in <div>)
+    if (tag === 'div' || tag === 'p') parts.push('\n');
+    if (tag === 'br') { parts.push('\n'); return; }
+
+    // Inline formatting → markdown markers (wrap children)
+    const isB = tag === 'strong' || tag === 'b';
+    const isI = tag === 'em'     || tag === 'i';
+    const isU = tag === 'u';
+    const isS = tag === 's'      || tag === 'del';
+
+    if (isB) parts.push('**');
+    if (isI) parts.push('*');
+    if (isU) parts.push('__');
+    if (isS) parts.push('~~');
+
+    node.childNodes.forEach(walk);
+
+    if (isS) parts.push('~~');
+    if (isU) parts.push('__');
+    if (isI) parts.push('*');
+    if (isB) parts.push('**');
+  }
+
+  editor.childNodes.forEach(walk);
+
+  return parts
+    .join('')
+    .replace(/^\n+/, '')      // strip leading newlines
+    .replace(/\n{3,}/g, '\n\n') // collapse excessive blank lines
     .trim();
 }
 
+// ── Format conversion (used for loading notes from disk) ─────────────────────
 /**
- * Convert plain text (with markdown markers) → HTML for the contenteditable.
- * Called when loading a note from disk.
+ * Convert plain text (markdown-lite + code fences) → HTML for the editor.
+ * Code fences (```lang\ncode\n```) become .code-block HTML via
+ * createCodeBlockHTML(). Regular text uses the same inline → html rules as
+ * before, now extracted into the helper inlineToHtml().
  */
-function textToHtml(text) {
-  // Escape HTML special chars first so we don't interpret existing < > in notes
+function inlineToHtml(text) {
   let html = text
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
 
-  // Apply markdown → HTML (order matters: ** before *)
+  // Markdown → HTML (order matters: ** before *)
   html = html
     .replace(/\*\*([\s\S]*?)\*\*/g, '<strong>$1</strong>')
     .replace(/__([\s\S]*?)__/g,      '<u>$1</u>')
@@ -90,6 +369,29 @@ function textToHtml(text) {
     .replace(/\n/g,                  '<br>');
 
   return html;
+}
+
+function textToHtml(text) {
+  // Split on code fences, preserving order
+  const FENCE = /```(\w*)\n([\s\S]*?)\n```/g;
+  const parts  = [];
+  let lastIndex = 0;
+  let m;
+
+  while ((m = FENCE.exec(text)) !== null) {
+    if (m.index > lastIndex) {
+      parts.push(inlineToHtml(text.slice(lastIndex, m.index)));
+    }
+    const lang = LANG_ALIASES[m[1].toLowerCase()] || m[1].toLowerCase() || 'text';
+    parts.push(createCodeBlockHTML(lang, m[2]));
+    lastIndex = FENCE.lastIndex;
+  }
+
+  if (lastIndex < text.length) {
+    parts.push(inlineToHtml(text.slice(lastIndex)));
+  }
+
+  return parts.join('');
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -111,16 +413,16 @@ function filenameToDate(filename) {
 
 /** First non-empty line of plain text, stripped of markdown markers */
 function firstLine(text) {
-  return (text.split('\n').find(l => l.trim()) || '(empty)')
-    .replace(/[*_~]/g, '')
+  return (text.split('\n').find(l => l.trim() && !l.trim().startsWith('```')) || '(empty)')
+    .replace(/[*_~`]/g, '')
     .trim();
 }
 
 /** Second non-empty line, if any */
 function secondLine(text) {
-  const lines = text.split('\n').filter(l => l.trim());
+  const lines = text.split('\n').filter(l => l.trim() && !l.trim().startsWith('```'));
   if (lines.length < 2) return '';
-  return lines[1].replace(/[*_~]/g, '').trim();
+  return lines[1].replace(/[*_~`]/g, '').trim();
 }
 
 function flashStatus(msg, ms = 1400) {
@@ -178,10 +480,6 @@ function renderSidebar() {
   });
 }
 
-function escHtml(str) {
-  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-
 async function switchToNote(note) {
   if (note.filename === currentFilename) return;
 
@@ -191,6 +489,7 @@ async function switchToNote(note) {
 
   currentFilename  = note.filename;
   editor.innerHTML = textToHtml(note.content);
+  initCodeBlocks();
   resetFormatButtons();
   renderSidebar();
   editor.focus();
@@ -205,7 +504,6 @@ btnSidebar.addEventListener('click', () => {
 
 // ── Find in note ──────────────────────────────────────────────────────────────
 
-/** Escape special regex characters in the user's search string */
 function escapeRegex(str) {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -213,18 +511,24 @@ function escapeRegex(str) {
 /**
  * Walk every text node inside the editor using TreeWalker, find all matches,
  * and wrap them in <mark class="highlight"> elements.
- * TreeWalker is used (instead of innerHTML regex) because it correctly handles
- * text that spans across formatting tags like <strong> or <em>.
+ * Code blocks are skipped — searching only covers plain text.
  */
 function highlightMatches(query) {
   clearHighlights();
   if (!query.trim()) { updateSearchCount(); return; }
 
-  const regex    = new RegExp(escapeRegex(query), 'gi');
-  const walker   = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT, null);
-  const textNodes = [];
+  const regex  = new RegExp(escapeRegex(query), 'gi');
+  const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      // Skip text nodes that live inside a code block
+      if (node.parentElement && node.parentElement.closest('.code-block')) {
+        return NodeFilter.FILTER_SKIP;
+      }
+      return NodeFilter.FILTER_ACCEPT;
+    }
+  });
 
-  // Collect all text nodes first (modifying the DOM while walking breaks the walker)
+  const textNodes = [];
   let node;
   while ((node = walker.nextNode())) textNodes.push(node);
 
@@ -237,11 +541,9 @@ function highlightMatches(query) {
     let lastIndex  = 0;
 
     matches.forEach(match => {
-      // Plain text before this match
       if (match.index > lastIndex) {
         fragment.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
       }
-      // The match itself, wrapped in <mark>
       const mark       = document.createElement('mark');
       mark.className   = 'highlight';
       mark.textContent = match[0];
@@ -249,7 +551,6 @@ function highlightMatches(query) {
       lastIndex = match.index + match[0].length;
     });
 
-    // Any remaining text after the last match
     if (lastIndex < text.length) {
       fragment.appendChild(document.createTextNode(text.slice(lastIndex)));
     }
@@ -257,25 +558,21 @@ function highlightMatches(query) {
     textNode.parentNode.replaceChild(fragment, textNode);
   });
 
-  // Collect all inserted marks and activate the first one
   searchMarks = Array.from(editor.querySelectorAll('mark.highlight'));
   searchIndex = searchMarks.length > 0 ? 0 : -1;
   activateMark(searchIndex);
   updateSearchCount();
 }
 
-/** Remove all <mark> elements, restoring plain text nodes */
 function clearHighlights() {
   editor.querySelectorAll('mark.highlight').forEach(mark => {
-    // replaceWith spreads child nodes back into the parent
     mark.replaceWith(...mark.childNodes);
   });
-  editor.normalize(); // merge adjacent text nodes back together
+  editor.normalize();
   searchMarks = [];
   searchIndex = -1;
 }
 
-/** Highlight the active mark and scroll it into view */
 function activateMark(index) {
   searchMarks.forEach((m, i) => m.classList.toggle('active', i === index));
   if (searchMarks[index]) {
@@ -283,7 +580,6 @@ function activateMark(index) {
   }
 }
 
-/** Move to the next (+1) or previous (-1) match */
 function navigateMatch(dir) {
   if (searchMarks.length === 0) return;
   searchIndex = (searchIndex + dir + searchMarks.length) % searchMarks.length;
@@ -291,7 +587,6 @@ function navigateMatch(dir) {
   updateSearchCount();
 }
 
-/** Update the "2 / 7" counter next to the search input */
 function updateSearchCount() {
   if (!searchInput.value.trim()) { searchCount.textContent = ''; return; }
   if (searchMarks.length === 0)  { searchCount.textContent = 'No results'; return; }
@@ -304,7 +599,6 @@ function openSearch() {
   btnSearch.classList.add('active');
   searchInput.focus();
   searchInput.select();
-  // If there's already a query in the box, re-highlight immediately
   if (searchInput.value.trim()) highlightMatches(searchInput.value);
 }
 
@@ -318,17 +612,14 @@ function closeSearch() {
   editor.focus();
 }
 
-// Search button in toolbar
 btnSearch.addEventListener('click', () => {
   searchOpen ? closeSearch() : openSearch();
 });
 
-// Re-highlight live as the user types
 searchInput.addEventListener('input', () => {
   highlightMatches(searchInput.value);
 });
 
-// Enter = next match, Shift+Enter = previous, Escape = close
 searchInput.addEventListener('keydown', e => {
   if (e.key === 'Enter') {
     e.preventDefault();
@@ -346,7 +637,7 @@ document.getElementById('search-close').addEventListener('click', () => closeSea
 
 async function flushCurrentNote() {
   if (!currentFilename) return;
-  const content = htmlToText(editor.innerHTML);
+  const content = editorToText();
   if (!content) return;
   await window.notesAPI.save(currentFilename, content);
   // Update in-memory cache
@@ -361,7 +652,6 @@ async function flushCurrentNote() {
 
 function scheduleSave() {
   // Don't save while search is active — the DOM contains <mark> tags
-  // that must not be written to the .txt file
   if (searchOpen) return;
   clearTimeout(saveTimer);
   saveTimer = setTimeout(async () => {
@@ -397,9 +687,9 @@ btnDelete.addEventListener('click', async () => {
   }
 
   if (allNotes.length > 0) {
-    // Load the next most-recent note
     currentFilename  = allNotes[0].filename;
     editor.innerHTML = textToHtml(allNotes[0].content);
+    initCodeBlocks();
   } else {
     editor.innerHTML = '';
     currentFilename  = makeFilename();
@@ -425,17 +715,8 @@ fontSizeEl.addEventListener('keydown', e => {
 // Pure manual toggles — clicking lights the button up, clicking again dims it.
 // The cursor position never re-engages or disengages a button automatically.
 
-// Our own authoritative record of the browser's pending format state.
-// We update it every time we call execCommand, so we never have to ask
-// the browser (queryCommandState / DOM walk) — both are unreliable for
-// detecting pending state vs. inherited-from-surrounding-text state.
 const fmtState = { bold: false, italic: false, underline: false, strikeThrough: false };
 
-/**
- * Apply a format and keep fmtState in sync.
- * execCommand is a toggle — we only call it when it would move in the
- * direction we want. fmtState tells us the true current pending state.
- */
 function applyFormat(cmd) {
   editor.focus();
   const btn = document.querySelector(`.fmt-btn[data-cmd="${cmd}"]`);
@@ -443,8 +724,6 @@ function applyFormat(cmd) {
 
   const willActivate = !btn.classList.contains('active');
 
-  // Call execCommand only when its toggle would produce the right result.
-  // fmtState[cmd] is what the browser's pending state actually is right now.
   if (willActivate !== fmtState[cmd]) {
     document.execCommand(cmd, false, null);
   }
@@ -453,15 +732,9 @@ function applyFormat(cmd) {
   btn.classList.toggle('active');
 }
 
-/**
- * Reset all format buttons AND cancel any pending browser format state.
- * Called on new note, note switch, and note delete so formats never
- * bleed across into a fresh editing context.
- */
 function resetFormatButtons() {
   Object.keys(fmtState).forEach(cmd => {
     if (fmtState[cmd]) {
-      // Browser pending state is ON — call execCommand to turn it OFF
       document.execCommand(cmd, false, null);
       fmtState[cmd] = false;
     }
@@ -476,6 +749,11 @@ document.querySelectorAll('.fmt-btn').forEach(btn => {
 
 // ── Keyboard shortcuts ────────────────────────────────────────────────────────
 editor.addEventListener('keydown', e => {
+  // Code block trigger: /language + Enter or Space
+  if (e.key === 'Enter' || e.key === ' ') {
+    if (tryInsertCodeBlock(e)) return;
+  }
+
   if (e.ctrlKey || e.metaKey) {
     switch (e.key.toLowerCase()) {
       case 'b': e.preventDefault(); applyFormat('bold');      break;
@@ -487,7 +765,6 @@ editor.addEventListener('keydown', e => {
   }
   if (e.key === 'Escape' && searchOpen) closeSearch();
 });
-
 
 // Also catch Ctrl+F from anywhere in the window (e.g. when sidebar is focused)
 window.addEventListener('keydown', e => {
@@ -504,6 +781,7 @@ async function init() {
   if (allNotes.length > 0) {
     currentFilename  = allNotes[0].filename;
     editor.innerHTML = textToHtml(allNotes[0].content);
+    initCodeBlocks();
   } else {
     currentFilename = makeFilename();
   }
