@@ -40,10 +40,19 @@
         <button class="fmt-btn" data-cmd="strikeThrough" title="Strikethrough"><s>S</s></button>
       </div>
 
-      <!-- Right: font size + sidebar toggle -->
+      <!-- Right: font size + search + sidebar toggle -->
       <div class="toolbar-cluster" id="cluster-right">
         <input id="font-size" type="number" value="14" min="8" max="72"
                title="Font size" aria-label="Font size" />
+        <button id="btn-search" class="icon-btn" title="Find in note (Ctrl+F)">
+          <!-- Magnifying glass icon -->
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="2.2"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="11" cy="11" r="8"/>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+        </button>
         <button id="btn-sidebar" class="icon-btn" title="Toggle notes list">
           <!-- Hamburger icon -->
           <svg width="14" height="12" viewBox="0 0 14 12" fill="none"
@@ -57,6 +66,16 @@
       </div>
 
     </div><!-- /toolbar -->
+
+    <!-- ── Search bar — hidden until Ctrl+F or 🔍 clicked ───────────────────── -->
+    <div id="search-bar">
+      <input id="search-input" type="text" placeholder="Find in note…"
+             autocomplete="off" spellcheck="false" aria-label="Search" />
+      <span id="search-count"></span>
+      <button id="search-prev" class="search-nav-btn" title="Previous match (Shift+Enter)">↑</button>
+      <button id="search-next" class="search-nav-btn" title="Next match (Enter)">↓</button>
+      <button id="search-close" class="search-nav-btn" title="Close (Escape)">×</button>
+    </div>
 
     <!-- ── Main area (editor + sidebar side by side) ──────────────────────── -->
     <div id="main-area">

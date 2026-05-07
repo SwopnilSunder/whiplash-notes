@@ -113,6 +113,86 @@ html, body {
 #font-size::-webkit-inner-spin-button,
 #font-size::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 
+/* ── Search bar ──────────────────────────────────────────────────────────────
+   Slides in below the toolbar. Height:0 → closed, height:38px → open.       */
+#search-bar {
+  display:        flex;
+  align-items:    center;
+  gap:            6px;
+  padding:        0 10px;
+  height:         0;
+  overflow:       hidden;
+  background:     var(--bg-toolbar);
+  border-bottom:  0px solid var(--border);
+  flex-shrink:    0;
+  transition:     height 0.18s ease, border-bottom-width 0.18s ease,
+                  padding-top 0.18s ease, padding-bottom 0.18s ease;
+}
+#search-bar.open {
+  height:         38px;
+  border-bottom:  1px solid var(--border);
+}
+
+#search-input {
+  flex:           1;
+  background:     var(--bg-pill);
+  border:         none;
+  border-radius:  var(--radius-btn);
+  color:          var(--text);
+  font-family:    var(--font);
+  font-size:      12px;
+  padding:        4px 10px;
+  outline:        none;
+  min-width:      0;
+  transition:     background 0.12s;
+}
+#search-input:focus    { background: var(--bg-pill-hover); }
+#search-input::placeholder { color: var(--text-dim); }
+
+#search-count {
+  font-family:    var(--font);
+  font-size:      11px;
+  color:          var(--text-dim);
+  white-space:    nowrap;
+  min-width:      44px;
+  text-align:     center;
+}
+
+.search-nav-btn {
+  display:         flex;
+  align-items:     center;
+  justify-content: center;
+  width:           24px;
+  height:          24px;
+  background:      transparent;
+  border:          none;
+  border-radius:   var(--radius-btn);
+  color:           var(--text-toolbar);
+  font-size:       14px;
+  cursor:          pointer;
+  transition:      background 0.12s, color 0.12s;
+  flex-shrink:     0;
+}
+.search-nav-btn:hover  { background: var(--bg-pill-hover); color: var(--text); }
+.search-nav-btn:active { background: #48484a; }
+
+/* Active search button state */
+#btn-search.active { background: var(--bg-pill-hover); color: var(--text); }
+
+/* ── Highlight marks ─────────────────────────────────────────────────────────
+   All matches: muted amber. The current active match: bright amber.         */
+mark.highlight {
+  background:     rgba(255, 200, 0, 0.25);
+  color:          inherit;
+  border-radius:  2px;
+  padding:        0 1px;
+}
+mark.highlight.active {
+  background:     rgba(255, 200, 0, 0.7);
+  color:          #1c1c1e;
+  border-radius:  2px;
+}
+
 /* ── Main area: editor + sidebar ─────────────────────────────────────────────  */
 #main-area {
   display: flex; flex: 1; overflow: hidden;
