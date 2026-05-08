@@ -352,6 +352,12 @@ mark.highlight.active {
   letter-spacing: 0.06em;
 }
 
+.code-header-actions {
+  display:     flex;
+  align-items: center;
+  gap:         4px;
+}
+
 .code-copy-btn {
   font-family:   var(--font);
   font-size:     10px;
@@ -366,6 +372,21 @@ mark.highlight.active {
 .code-copy-btn:hover  { color: #d4d4d4; background: rgba(255,255,255,0.08); }
 .code-copy-btn:active { background: rgba(255,255,255,0.13); }
 .code-copy-btn.copied { color: var(--accent-green); }
+
+.code-delete-btn {
+  font-family:   var(--font);
+  font-size:     11px;
+  color:         #858585;
+  background:    transparent;
+  border:        none;
+  cursor:        pointer;
+  padding:       2px 6px;
+  border-radius: 3px;
+  transition:    color 0.12s, background 0.12s;
+  line-height:   1;
+}
+.code-delete-btn:hover  { color: #ff453a; background: rgba(255,69,58,0.12); }
+.code-delete-btn:active { background: rgba(255,69,58,0.22); }
 
 /* Body: relatively positioned so the textarea can overlay the pre */
 .code-block-body {

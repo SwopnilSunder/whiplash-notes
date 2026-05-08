@@ -40,6 +40,8 @@ let searchOpen      = false;
 let searchMarks     = [];    // all <mark> elements currently in the editor
 let searchIndex     = -1;   // which mark is currently active
 let statusTimer     = null;
+// Undo stack for code-block deletions (X button)
+const deletedBlocks = [];
 
 // ── Language aliases ──────────────────────────────────────────────────────────
 // Maps the /trigger word the user types to the canonical language key
@@ -82,7 +84,10 @@ function createCodeBlockHTML(lang, code) {
     `<div class="code-block" data-lang="${lang}" contenteditable="false">` +
       `<div class="code-block-header">` +
         `<span class="code-lang-label">${lang}</span>` +
-        `<button class="code-copy-btn">Copy</button>` +
+        `<div class="code-header-actions">` +
+          `<button class="code-copy-btn">Copy</button>` +
+          `<button class="code-delete-btn" title="Delete block">✕</button>` +
+        `</div>` +
       `</div>` +
       `<div class="code-block-body">` +
         `<pre class="code-pre language-${lang}">` +
@@ -101,10 +106,13 @@ function createCodeBlockHTML(lang, code) {
  * re-highlight on every keystroke, sync height, copy button.
  */
 function setupCodeBlock(wrapper) {
-  const ta      = wrapper.querySelector('.code-textarea');
-  const codeEl  = wrapper.querySelector('code');
-  const copyBtn = wrapper.querySelector('.code-copy-btn');
-  const lang    = wrapper.dataset.lang || 'text';
+  wrapper.dataset.wired = '1'; // sentinel so the MutationObserver won't double-wire
+
+  const ta        = wrapper.querySelector('.code-textarea');
+  const codeEl    = wrapper.querySelector('code');
+  const copyBtn   = wrapper.querySelector('.code-copy-btn');
+  const deleteBtn = wrapper.querySelector('.code-delete-btn');
+  const lang      = wrapper.dataset.lang || 'text';
 
   // Restore code from the encoded attribute (set by createCodeBlockHTML or
   // loaded from textToHtml after parsing a code fence from disk).
@@ -145,9 +153,27 @@ function setupCodeBlock(wrapper) {
       ta.selectionStart = ta.selectionEnd = s + 4;
       rehighlight();
     }
-    // Escape → return focus to the editor
+    // Escape → return focus to editor after this block
     if (ev.key === 'Escape') {
-      editor.focus();
+      ev.preventDefault();
+      ev.stopPropagation();
+      focusEditorAfterBlock(wrapper);
+    }
+    // ArrowDown on last line → move cursor to editor content after this block
+    if (ev.key === 'ArrowDown') {
+      if (!ta.value.slice(ta.selectionEnd).includes('\n')) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        focusEditorAfterBlock(wrapper);
+      }
+    }
+    // ArrowUp on first line → move cursor to editor content before this block
+    if (ev.key === 'ArrowUp') {
+      if (!ta.value.slice(0, ta.selectionStart).includes('\n')) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        focusEditorBeforeBlock(wrapper);
+      }
     }
   });
 
@@ -174,6 +200,18 @@ function setupCodeBlock(wrapper) {
     });
   });
 
+  // Delete button — removes the block and pushes to our undo stack (Ctrl+Z restores it)
+  if (deleteBtn) {
+    deleteBtn.addEventListener('click', () => {
+      ta.dataset.initialCode = encodeURIComponent(ta.value);
+      const afterEl = wrapper.nextSibling;
+      focusEditorAfterBlock(wrapper);
+      deletedBlocks.push({ el: wrapper, afterEl });
+      wrapper.remove();
+      scheduleSave();
+    });
+  }
+
   // Initial height
   syncHeight();
 }
@@ -182,6 +220,91 @@ function setupCodeBlock(wrapper) {
 /** Called after setting editor.innerHTML — wires up every .code-block found. */
 function initCodeBlocks() {
   editor.querySelectorAll('.code-block').forEach(setupCodeBlock);
+}
+
+// ── Code block ↔ editor focus helpers ────────────────────────────────────────
+
+function getNodeRect(node) {
+  if (node.nodeType === Node.ELEMENT_NODE) return node.getBoundingClientRect();
+  const r = document.createRange();
+  r.selectNodeContents(node);
+  return r.getBoundingClientRect();
+}
+
+function isOnLastVisualLine(range, el) {
+  const rRect = range.getBoundingClientRect();
+  // Zero-height rect means cursor is at a void node like <br> — treat as boundary
+  if (rRect.height === 0) return true;
+  return rRect.bottom >= getNodeRect(el).bottom - 2;
+}
+
+function isOnFirstVisualLine(range, el) {
+  const rRect = range.getBoundingClientRect();
+  if (rRect.height === 0) return true;
+  return rRect.top <= getNodeRect(el).top + 2;
+}
+
+function focusEditorAfterBlock(block) {
+  // Skip <br> gaps; if the next real sibling is also a code block, jump into it
+  let sib = block.nextSibling;
+  while (sib && sib.nodeName === 'BR') sib = sib.nextSibling;
+  if (sib && sib.nodeType === Node.ELEMENT_NODE && sib.classList.contains('code-block')) {
+    const ta = sib.querySelector('.code-textarea');
+    if (ta) { ta.focus(); ta.setSelectionRange(0, 0); }
+    return;
+  }
+
+  editor.focus();
+  const sel = window.getSelection();
+  const rng = document.createRange();
+  const next = block.nextSibling;
+  if (next) {
+    if (next.nodeType === Node.TEXT_NODE) rng.setStart(next, 0);
+    else rng.setStartBefore(next);
+  } else {
+    rng.setStartAfter(block);
+  }
+  rng.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(rng);
+}
+
+function focusEditorBeforeBlock(block) {
+  // Skip <br> gaps; if the previous real sibling is also a code block, jump into it
+  let sib = block.previousSibling;
+  while (sib && sib.nodeName === 'BR') sib = sib.previousSibling;
+  if (sib && sib.nodeType === Node.ELEMENT_NODE && sib.classList.contains('code-block')) {
+    const ta = sib.querySelector('.code-textarea');
+    if (ta) { const len = ta.value.length; ta.focus(); ta.setSelectionRange(len, len); }
+    return;
+  }
+
+  editor.focus();
+  const sel = window.getSelection();
+  const rng = document.createRange();
+  const prev = block.previousSibling;
+  if (prev) {
+    if (prev.nodeType === Node.TEXT_NODE) rng.setStart(prev, prev.nodeValue.length);
+    else rng.setStart(prev, prev.childNodes.length);
+  } else {
+    rng.setStart(editor, 0);
+  }
+  rng.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(rng);
+}
+
+/**
+ * Ensure the editor has a trailing editable element after any final code block.
+ * Without this, clicks and cursor positioning can fall inside the textarea.
+ */
+function ensureTrailingLine() {
+  const last = editor.lastChild;
+  if (last && last.nodeType === Node.ELEMENT_NODE && last.classList.contains('code-block')) {
+    const trail = document.createElement('div');
+    trail.appendChild(document.createElement('br'));
+    editor.appendChild(trail);
+  }
 }
 
 // ── Code block trigger ────────────────────────────────────────────────────────
@@ -490,6 +613,7 @@ async function switchToNote(note) {
   currentFilename  = note.filename;
   editor.innerHTML = textToHtml(note.content);
   initCodeBlocks();
+  ensureTrailingLine();
   resetFormatButtons();
   renderSidebar();
   editor.focus();
@@ -690,6 +814,7 @@ btnDelete.addEventListener('click', async () => {
     currentFilename  = allNotes[0].filename;
     editor.innerHTML = textToHtml(allNotes[0].content);
     initCodeBlocks();
+    ensureTrailingLine();
   } else {
     editor.innerHTML = '';
     currentFilename  = makeFilename();
@@ -754,8 +879,123 @@ editor.addEventListener('keydown', e => {
     if (tryInsertCodeBlock(e)) return;
   }
 
+  // Arrow key navigation into adjacent code blocks (synchronous pre-check).
+  // We inspect where the cursor is BEFORE the browser moves it. If it is on
+  // the last visual line above a code block (ArrowDown) or the first visual
+  // line below one (ArrowUp), we intercept and focus the textarea directly.
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    const goingDown = e.key === 'ArrowDown';
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount) {
+      const range = sel.getRangeAt(0);
+      let lineEl = range.startContainer;
+      while (lineEl && lineEl.parentNode !== editor) lineEl = lineEl.parentNode;
+
+      if (lineEl && lineEl !== editor) {
+        if (goingDown) {
+          let sib = lineEl.nextSibling;
+          while (sib && sib.nodeName === 'BR') sib = sib.nextSibling;
+          if (sib && sib.nodeType === Node.ELEMENT_NODE && sib.classList.contains('code-block') &&
+              isOnLastVisualLine(range, lineEl)) {
+            e.preventDefault();
+            const ta = sib.querySelector('.code-textarea');
+            if (ta) { ta.focus(); ta.setSelectionRange(0, 0); }
+          }
+        } else {
+          let sib = lineEl.previousSibling;
+          while (sib && sib.nodeName === 'BR') sib = sib.previousSibling;
+          if (sib && sib.nodeType === Node.ELEMENT_NODE && sib.classList.contains('code-block') &&
+              isOnFirstVisualLine(range, lineEl)) {
+            e.preventDefault();
+            const ta = sib.querySelector('.code-textarea');
+            if (ta) { const len = ta.value.length; ta.focus(); ta.setSelectionRange(len, len); }
+          }
+        }
+      }
+
+      // Prevent browser wrap-around: at the very top/bottom of the editor the
+      // browser moves the cursor to the opposite end of the content. Block it.
+      // Skip when rRect.height === 0 (cursor in a <br>/empty line) — those
+      // positions always return true from isOnFirst/LastVisualLine and would
+      // freeze both arrow keys.
+      const rRect = range.getBoundingClientRect();
+      if (rRect.height > 0) {
+        const edRect = editor.getBoundingClientRect();
+        if (!goingDown && rRect.top    <= edRect.top    + 2) e.preventDefault();
+        if (goingDown  && rRect.bottom >= edRect.bottom - 2) e.preventDefault();
+      }
+    }
+  }
+
+  // Guard: prevent Backspace / Delete from swallowing an adjacent code block.
+  // beforeinput's getTargetRanges() only returns the merge-boundary, not the
+  // block itself, so intersectsNode() always misses it. keydown is reliable.
+  if ((e.key === 'Backspace' || e.key === 'Delete') && !e.ctrlKey && !e.metaKey) {
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount && sel.getRangeAt(0).collapsed) {
+      const range     = sel.getRangeAt(0);
+      const container = range.startContainer;
+      const offset    = range.startOffset;
+      let adjacent    = null;
+
+      // Returns true for nodes that are "visually empty" — BRs, whitespace text,
+      // or elements whose every descendant is one of those (e.g. <div><br><br></div>).
+      function isVisuallyEmpty(n) {
+        if (!n) return false;
+        if (n.nodeName === 'BR') return true;
+        if (n.nodeType === Node.TEXT_NODE) return n.nodeValue.trim() === '';
+        if (n.nodeType === Node.ELEMENT_NODE)
+          return n.childNodes.length > 0 && [...n.childNodes].every(isVisuallyEmpty);
+        return false;
+      }
+
+      if (e.key === 'Backspace') {
+        if (container === editor) {
+          adjacent = offset > 0 ? editor.childNodes[offset - 1] : null;
+        } else {
+          let node = container;
+          while (node && node !== editor && node.parentNode !== editor) node = node.parentNode;
+          if (node && node !== editor) {
+            const isLineStart = offset === 0;
+            const isEmptyLine = node.nodeType === Node.ELEMENT_NODE && isVisuallyEmpty(node);
+            if (isLineStart || isEmptyLine) adjacent = node.previousSibling;
+          }
+        }
+        while (adjacent && isVisuallyEmpty(adjacent)) adjacent = adjacent.previousSibling;
+      } else {
+        const atEnd = container.nodeType === Node.TEXT_NODE
+          ? offset === container.nodeValue.length
+          : offset === container.childNodes.length;
+        if (container === editor) {
+          adjacent = editor.childNodes[offset] || null;
+        } else if (atEnd) {
+          let node = container;
+          while (node && node !== editor && node.parentNode !== editor) node = node.parentNode;
+          if (node && node !== editor) adjacent = node.nextSibling;
+        }
+        while (adjacent && isVisuallyEmpty(adjacent)) adjacent = adjacent.nextSibling;
+      }
+
+      if (adjacent && adjacent.nodeType === Node.ELEMENT_NODE && adjacent.classList.contains('code-block')) {
+        e.preventDefault();
+      }
+    }
+  }
+
   if (e.ctrlKey || e.metaKey) {
     switch (e.key.toLowerCase()) {
+      case 'z': {
+        // Restore the most recently X-deleted code block before falling through to browser undo
+        if (deletedBlocks.length > 0) {
+          e.preventDefault();
+          const { el, afterEl } = deletedBlocks.pop();
+          if (afterEl && afterEl.parentNode === editor) editor.insertBefore(el, afterEl);
+          else editor.appendChild(el);
+          setupCodeBlock(el);
+          scheduleSave();
+        }
+        break;
+      }
       case 'b': e.preventDefault(); applyFormat('bold');      break;
       case 'i': e.preventDefault(); applyFormat('italic');    break;
       case 'u': e.preventDefault(); applyFormat('underline'); break;
@@ -774,6 +1014,18 @@ window.addEventListener('keydown', e => {
   }
 });
 
+
+// ── Re-wire code blocks restored by Ctrl+Z ────────────────────────────────────
+// Direct DOM removal bypasses the browser's undo stack; we use execCommand
+// instead. When Ctrl+Z restores the HTML the event listeners are gone, so this
+// observer calls setupCodeBlock again on any unwired (.code-block) node.
+const codeBlockObserver = new MutationObserver(() => {
+  editor.querySelectorAll('.code-block:not([data-wired])').forEach(block => {
+    setupCodeBlock(block);
+  });
+});
+codeBlockObserver.observe(editor, { childList: true });
+
 // ── Boot ──────────────────────────────────────────────────────────────────────
 async function init() {
   allNotes = await window.notesAPI.loadAll();  // newest first
@@ -782,6 +1034,7 @@ async function init() {
     currentFilename  = allNotes[0].filename;
     editor.innerHTML = textToHtml(allNotes[0].content);
     initCodeBlocks();
+    ensureTrailingLine();
   } else {
     currentFilename = makeFilename();
   }
