@@ -438,6 +438,12 @@ function editorToText() {
       return;
     }
 
+    // Images → custom marker
+    if (tag === 'img') {
+      if (node.src) parts.push(`![img](${node.src})`);
+      return;
+    }
+
     // Block elements → leading newline (browser wraps paragraphs in <div>)
     if (tag === 'div' || tag === 'p') parts.push('\n');
     if (tag === 'br') { parts.push('\n'); return; }
@@ -478,6 +484,15 @@ function editorToText() {
  * before, now extracted into the helper inlineToHtml().
  */
 function inlineToHtml(text) {
+  // Pull images out before HTML-escaping (data URLs contain characters that
+  // would survive escaping fine, but the regex is cleaner on raw text).
+  const imgSlots = [];
+  text = text.replace(/!\[img\]\((data:[^)\s]+)\)/g, (_, src) => {
+    const i = imgSlots.length;
+    imgSlots.push(src);
+    return `\x00img${i}\x00`;
+  });
+
   let html = text
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -490,6 +505,11 @@ function inlineToHtml(text) {
     .replace(/~~([\s\S]*?)~~/g,      '<s>$1</s>')
     .replace(/\*([\s\S]*?)\*/g,      '<em>$1</em>')
     .replace(/\n/g,                  '<br>');
+
+  // Restore images
+  html = html.replace(/\x00img(\d+)\x00/g, (_, i) =>
+    `<img class="note-image" src="${imgSlots[i]}">`
+  );
 
   return html;
 }
@@ -788,6 +808,40 @@ function scheduleSave() {
 
 editor.addEventListener('input', scheduleSave);
 
+// ── Image paste ───────────────────────────────────────────────────────────────
+editor.addEventListener('paste', e => {
+  const items = Array.from(e.clipboardData?.items || []);
+  const imageItem = items.find(it => it.type.startsWith('image/'));
+  if (!imageItem) return; // let normal paste proceed
+
+  e.preventDefault();
+  const file = imageItem.getAsFile();
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = evt => {
+    const img = document.createElement('img');
+    img.src       = evt.target.result;
+    img.className = 'note-image';
+
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount) {
+      const range = sel.getRangeAt(0);
+      range.deleteContents();
+      range.insertNode(img);
+      // Place cursor after the image
+      range.setStartAfter(img);
+      range.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    } else {
+      editor.appendChild(img);
+    }
+    scheduleSave();
+  };
+  reader.readAsDataURL(file);
+});
+
 // ── New note ──────────────────────────────────────────────────────────────────
 btnNew.addEventListener('click', async () => {
   clearTimeout(saveTimer);
@@ -844,15 +898,22 @@ const fmtState = { bold: false, italic: false, underline: false, strikeThrough: 
 
 function applyFormat(cmd) {
   editor.focus();
+
+  const sel = window.getSelection();
+  if (sel && !sel.isCollapsed) {
+    // Text is selected: just apply the format, don't touch button state.
+    document.execCommand(cmd, false, null);
+    scheduleSave();
+    return;
+  }
+
+  // No selection: toggle "typing mode" — button stays lit while you type.
   const btn = document.querySelector(`.fmt-btn[data-cmd="${cmd}"]`);
   if (!btn) return;
-
   const willActivate = !btn.classList.contains('active');
-
   if (willActivate !== fmtState[cmd]) {
     document.execCommand(cmd, false, null);
   }
-
   fmtState[cmd] = willActivate;
   btn.classList.toggle('active');
 }
@@ -1053,3 +1114,94 @@ async function init() {
 }
 
 init();
+
+// ── Right-click context menu ──────────────────────────────────────────────────
+(function () {
+  const menu      = document.getElementById('context-menu');
+  const ctxCopy   = document.getElementById('ctx-copy');
+  const ctxCut    = document.getElementById('ctx-cut');
+  const ctxPaste  = document.getElementById('ctx-paste');
+
+  function closeMenu() {
+    menu.classList.remove('open');
+    menu.setAttribute('aria-hidden', 'true');
+  }
+
+  function openMenu(x, y) {
+    menu.classList.add('open');
+    menu.setAttribute('aria-hidden', 'false');
+
+    // Clamp so menu never overflows the window
+    const mw = menu.offsetWidth  || 160;
+    const mh = menu.offsetHeight || 160;
+    const px = Math.min(x, window.innerWidth  - mw - 6);
+    const py = Math.min(y, window.innerHeight - mh - 6);
+    menu.style.left = px + 'px';
+    menu.style.top  = py + 'px';
+
+    // Show whether the selected text already has each format applied;
+    // disable the format row entirely when nothing is selected.
+    const hasSel = window.getSelection().toString().length > 0;
+    document.querySelectorAll('.ctx-fmt-btn').forEach(btn => {
+      btn.disabled = !hasSel;
+      btn.classList.toggle('active', hasSel && document.queryCommandState(btn.dataset.cmd));
+    });
+
+    // Disable Copy/Cut when nothing is selected
+    ctxCopy.disabled = !hasSel;
+    ctxCut.disabled  = !hasSel;
+  }
+
+  // Show on right-click inside the editor
+  editor.addEventListener('contextmenu', e => {
+    e.preventDefault();
+    openMenu(e.clientX, e.clientY);
+  });
+
+  // Format buttons — mousedown keeps the selection alive.
+  // These operate independently of the toolbar: execCommand directly,
+  // state read from queryCommandState, no toolbar buttons touched.
+  document.querySelectorAll('.ctx-fmt-btn').forEach(btn => {
+    btn.addEventListener('mousedown', e => e.preventDefault());
+    btn.addEventListener('click', () => {
+      editor.focus();
+      document.execCommand(btn.dataset.cmd, false, null);
+      btn.classList.toggle('active', document.queryCommandState(btn.dataset.cmd));
+      scheduleSave();
+    });
+  });
+
+  ctxCopy.addEventListener('mousedown', e => e.preventDefault());
+  ctxCopy.addEventListener('click', () => {
+    document.execCommand('copy');
+    closeMenu();
+  });
+
+  ctxCut.addEventListener('mousedown', e => e.preventDefault());
+  ctxCut.addEventListener('click', () => {
+    document.execCommand('cut');
+    closeMenu();
+    scheduleSave();
+  });
+
+  ctxPaste.addEventListener('click', async () => {
+    closeMenu();
+    editor.focus();
+    try {
+      const text = await navigator.clipboard.readText();
+      document.execCommand('insertText', false, text);
+      scheduleSave();
+    } catch {
+      document.execCommand('paste');
+    }
+  });
+
+  // Close on any outside click, Escape, or scroll
+  document.addEventListener('mousedown', e => {
+    if (!menu.contains(e.target)) closeMenu();
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closeMenu();
+  });
+  document.addEventListener('scroll', closeMenu, true);
+})();

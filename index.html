@@ -106,6 +106,20 @@
 
   </div><!-- /app -->
 
+  <!-- ── Right-click context menu ─────────────────────────────────────────── -->
+  <div id="context-menu" aria-hidden="true">
+    <div id="ctx-format-row">
+      <button class="ctx-fmt-btn" data-cmd="bold"          title="Bold"><b>B</b></button>
+      <button class="ctx-fmt-btn" data-cmd="italic"        title="Italic"><i>I</i></button>
+      <button class="ctx-fmt-btn" data-cmd="underline"     title="Underline"><u>U</u></button>
+      <button class="ctx-fmt-btn" data-cmd="strikeThrough" title="Strikethrough"><s>S</s></button>
+    </div>
+    <div class="ctx-divider"></div>
+    <button class="ctx-item" id="ctx-copy">Copy</button>
+    <button class="ctx-item" id="ctx-cut">Cut</button>
+    <button class="ctx-item" id="ctx-paste">Paste</button>
+  </div>
+
   <script src="lib/prism-bundle.js"></script>
   <script src="renderer.js"></script>
 </body>

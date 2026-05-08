@@ -445,3 +445,78 @@ mark.highlight.active {
   -webkit-app-region: no-drag;
 }
 .code-textarea:focus { outline: none; }
+
+/* ── Context menu ────────────────────────────────────────────────────────────  */
+#context-menu {
+  position:      fixed;
+  z-index:       9999;
+  min-width:     148px;
+  background:    #2c2c2e;
+  border:        1px solid rgba(255,255,255,0.10);
+  border-radius: 8px;
+  padding:       6px 0;
+  box-shadow:    0 8px 24px rgba(0,0,0,0.55);
+  display:       none;
+  user-select:   none;
+}
+#context-menu.open { display: block; }
+
+#ctx-format-row {
+  display:         flex;
+  align-items:     center;
+  justify-content: center;
+  gap:             4px;
+  padding:         6px 10px 8px;
+}
+
+.ctx-fmt-btn {
+  width:         32px;
+  height:        28px;
+  background:    #3a3a3c;
+  border:        1px solid rgba(255,255,255,0.08);
+  border-radius: 5px;
+  color:         var(--text-toolbar);
+  font-size:     12px;
+  cursor:        pointer;
+  transition:    background 0.12s, color 0.12s;
+  display:       flex;
+  align-items:   center;
+  justify-content: center;
+}
+.ctx-fmt-btn:hover           { background: #48484a; color: var(--text); }
+.ctx-fmt-btn.active          { background: #555558; color: #fff; }
+.ctx-fmt-btn:disabled        { opacity: 0.35; cursor: default; }
+.ctx-fmt-btn:disabled:hover  { background: #3a3a3c; color: var(--text-toolbar); }
+
+.ctx-divider {
+  height:     1px;
+  background: rgba(255,255,255,0.07);
+  margin:     2px 0;
+}
+
+.ctx-item {
+  display:    block;
+  width:      100%;
+  padding:    7px 16px;
+  background: none;
+  border:     none;
+  color:      var(--text);
+  font-size:  13px;
+  font-family: var(--font);
+  text-align: left;
+  cursor:     pointer;
+  transition: background 0.1s;
+}
+.ctx-item:hover    { background: rgba(255,255,255,0.07); }
+.ctx-item:disabled { color: var(--text-dim); cursor: default; }
+.ctx-item:disabled:hover { background: none; }
+
+/* ── Pasted images ───────────────────────────────────────────────────────────  */
+.note-image {
+  display:       block;
+  max-width:     100%;
+  border-radius: 6px;
+  margin:        6px 0;
+  user-select:   none;
+  -webkit-app-region: no-drag;
+}

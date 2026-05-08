@@ -2,26 +2,48 @@
 //  main.js  –  Electron main process
 // ─────────────────────────────────────────────────────────────────────────────
 
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, screen } = require('electron');
 const path = require('path');
 const fs   = require('fs');
 
 // ── Notes directory ───────────────────────────────────────────────────────────
 // Saved to the user's Documents folder so they're easy to find and open
 // in any text editor: C:\Users\<you>\Documents\WhiplashNotes\
-const NOTES_DIR = path.join(app.getPath('documents'), 'WhiplashNotes');
+const NOTES_DIR      = path.join(app.getPath('documents'), 'WhiplashNotes');
+const WIN_STATE_FILE = path.join(app.getPath('userData'),  'window-state.json');
 
 function ensureNotesDir() {
   if (!fs.existsSync(NOTES_DIR)) fs.mkdirSync(NOTES_DIR, { recursive: true });
+}
+
+// ── Window state persistence ──────────────────────────────────────────────────
+function loadWinState() {
+  try {
+    const state = JSON.parse(fs.readFileSync(WIN_STATE_FILE, 'utf8'));
+    // Make sure the top-left corner is still on a connected display
+    const onScreen = screen.getAllDisplays().some(({ workArea: a }) =>
+      state.x >= a.x && state.x < a.x + a.width &&
+      state.y >= a.y && state.y < a.y + a.height
+    );
+    if (onScreen) return state;          // { x, y, width, height }
+  } catch { /* first run or corrupt file */ }
+  return { width: 680, height: 420 };   // defaults — Electron centres automatically
+}
+
+function saveWinState(win) {
+  if (win.isMinimized() || win.isMaximized()) return;
+  try { fs.writeFileSync(WIN_STATE_FILE, JSON.stringify(win.getBounds()), 'utf8'); }
+  catch { /* non-fatal */ }
 }
 
 // ── Window ────────────────────────────────────────────────────────────────────
 let mainWindow;
 
 function createWindow() {
+  const winState = loadWinState();
+
   mainWindow = new BrowserWindow({
-    width:          680,
-    height:         420,
+    ...winState,            // x, y, width, height (or just width/height on first run)
     minWidth:       340,
     minHeight:      200,
     frame:          false,
@@ -41,6 +63,8 @@ function createWindow() {
 
   mainWindow.setAlwaysOnTop(true, 'screen-saver');
   mainWindow.loadFile('index.html');
+
+  mainWindow.on('close', () => saveWinState(mainWindow));
 }
 
 // ── IPC: File operations ──────────────────────────────────────────────────────
