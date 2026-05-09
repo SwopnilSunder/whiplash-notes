@@ -933,6 +933,41 @@ document.querySelectorAll('.fmt-btn').forEach(btn => {
   btn.addEventListener('click', () => applyFormat(btn.dataset.cmd));
 });
 
+// After a character is typed, fix its formatting if the browser silently
+// inherited bold/italic/etc. from adjacent styled text.  We select the
+// just-inserted character(s) and toggle each mismatched format — execCommand
+// on a real selection is reliable, unlike toggling on a collapsed cursor.
+editor.addEventListener('input', e => {
+  if (e.inputType !== 'insertText' || !e.data) return;
+
+  const cmdsToFix = [];
+  for (const cmd of Object.keys(fmtState)) {
+    if (document.queryCommandState(cmd) !== fmtState[cmd]) {
+      cmdsToFix.push(cmd);
+    }
+  }
+  if (cmdsToFix.length === 0) return;
+
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return;
+  const range = sel.getRangeAt(0);
+  const node = range.startContainer;
+  const offset = range.startOffset;
+  if (node.nodeType !== Node.TEXT_NODE || offset < e.data.length) return;
+
+  const fixRange = document.createRange();
+  fixRange.setStart(node, offset - e.data.length);
+  fixRange.setEnd(node, offset);
+  sel.removeAllRanges();
+  sel.addRange(fixRange);
+
+  for (const cmd of cmdsToFix) {
+    document.execCommand(cmd, false, null);
+  }
+
+  sel.collapseToEnd();
+});
+
 // ── Keyboard shortcuts ────────────────────────────────────────────────────────
 editor.addEventListener('keydown', e => {
   // Code block trigger: /language + Enter or Space
