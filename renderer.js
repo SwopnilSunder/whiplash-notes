@@ -23,7 +23,9 @@ const statusEl     = document.getElementById('status-text');
 const btnNew       = document.getElementById('btn-new');
 const btnDelete    = document.getElementById('btn-delete');
 const btnSidebar   = document.getElementById('btn-sidebar');
+const btnClose     = document.getElementById('btn-close');
 const btnSearch    = document.getElementById('btn-search');
+const tabBar       = document.getElementById('tab-bar');
 const sidebar      = document.getElementById('sidebar');
 const notesList    = document.getElementById('notes-list');
 const searchBar    = document.getElementById('search-bar');
@@ -42,6 +44,8 @@ let searchIndex     = -1;   // which mark is currently active
 let statusTimer     = null;
 // Undo stack for code-block deletions (X button)
 const deletedBlocks = [];
+// Tab bar: tracks opened notes as { filename }
+let openTabs = [];
 
 // ── Language aliases ──────────────────────────────────────────────────────────
 // Maps the /trigger word the user types to the canonical language key
@@ -590,6 +594,13 @@ statusEl.addEventListener('click', async () => {
   setAotLabel(isNowOn);
 });
 
+// ── Close button ─────────────────────────────────────────────────────────────
+btnClose.addEventListener('click', async () => {
+  clearTimeout(saveTimer);
+  await flushCurrentNote();
+  window.notesAPI.closeWindow();
+});
+
 // ── Sidebar ───────────────────────────────────────────────────────────────────
 
 function renderSidebar() {
@@ -635,6 +646,8 @@ async function switchToNote(note) {
   initCodeBlocks();
   ensureTrailingLine();
   resetFormatButtons();
+  ensureTab(currentFilename);
+  renderTabs();
   renderSidebar();
   editor.focus();
 }
@@ -645,6 +658,69 @@ btnSidebar.addEventListener('click', () => {
   btnSidebar.classList.toggle('active', sidebarOpen);
   if (sidebarOpen) renderSidebar();
 });
+
+// ── Tab bar ──────────────────────────────────────────────────────────────────
+
+function ensureTab(filename) {
+  if (!openTabs.find(t => t.filename === filename)) {
+    openTabs.push({ filename });
+  }
+}
+
+function removeTab(filename) {
+  openTabs = openTabs.filter(t => t.filename !== filename);
+}
+
+function renderTabs() {
+  tabBar.innerHTML = '';
+  openTabs.forEach(tab => {
+    const note = allNotes.find(n => n.filename === tab.filename);
+    const label = note ? firstLine(note.content).slice(0, 20) : tab.filename.replace('.txt', '');
+
+    const el = document.createElement('div');
+    el.className = 'tab-item' + (tab.filename === currentFilename ? ' active' : '');
+
+    const span = document.createElement('span');
+    span.className = 'tab-label';
+    span.textContent = label || '(empty)';
+
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'tab-close';
+    closeBtn.textContent = '×';
+    closeBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      closeTab(tab.filename);
+    });
+
+    el.appendChild(span);
+    el.appendChild(closeBtn);
+    el.addEventListener('click', () => {
+      const note = allNotes.find(n => n.filename === tab.filename);
+      if (note) switchToNote(note);
+    });
+    tabBar.appendChild(el);
+  });
+}
+
+function closeTab(filename) {
+  removeTab(filename);
+  if (filename === currentFilename) {
+    if (openTabs.length > 0) {
+      const next = allNotes.find(n => n.filename === openTabs[openTabs.length - 1].filename);
+      if (next) { switchToNote(next); return; }
+    }
+    if (allNotes.length > 0) {
+      const fallback = allNotes.find(n => n.filename !== filename) || allNotes[0];
+      ensureTab(fallback.filename);
+      switchToNote(fallback);
+      return;
+    }
+    editor.innerHTML = '';
+    currentFilename = makeFilename();
+    ensureTab(currentFilename);
+  }
+  renderTabs();
+}
 
 // ── Find in note ──────────────────────────────────────────────────────────────
 
@@ -801,6 +877,7 @@ function scheduleSave() {
   saveTimer = setTimeout(async () => {
     if (!currentFilename) currentFilename = makeFilename();
     await flushCurrentNote();
+    renderTabs();
     if (sidebarOpen) renderSidebar();
     flashStatus('Saved  ·  Always on Top');
   }, 400);
@@ -850,6 +927,8 @@ btnNew.addEventListener('click', async () => {
   editor.innerHTML = '';
   currentFilename  = makeFilename();
   resetFormatButtons();
+  ensureTab(currentFilename);
+  renderTabs();
   editor.focus();
   if (sidebarOpen) renderSidebar();
   flashStatus('New note');
@@ -859,21 +938,34 @@ btnNew.addEventListener('click', async () => {
 btnDelete.addEventListener('click', async () => {
   clearTimeout(saveTimer);
 
+  const deletedFilename = currentFilename;
   if (currentFilename) {
     await window.notesAPI.delete(currentFilename);
     allNotes = allNotes.filter(n => n.filename !== currentFilename);
+    removeTab(deletedFilename);
   }
 
-  if (allNotes.length > 0) {
+  if (openTabs.length > 0) {
+    const nextTab = allNotes.find(n => n.filename === openTabs[openTabs.length - 1].filename);
+    if (nextTab) {
+      currentFilename  = nextTab.filename;
+      editor.innerHTML = textToHtml(nextTab.content);
+      initCodeBlocks();
+      ensureTrailingLine();
+    }
+  } else if (allNotes.length > 0) {
     currentFilename  = allNotes[0].filename;
     editor.innerHTML = textToHtml(allNotes[0].content);
     initCodeBlocks();
     ensureTrailingLine();
+    ensureTab(currentFilename);
   } else {
     editor.innerHTML = '';
     currentFilename  = makeFilename();
+    ensureTab(currentFilename);
   }
 
+  renderTabs();
   if (sidebarOpen) renderSidebar();
   editor.focus();
   flashStatus('Deleted');
@@ -1108,6 +1200,16 @@ window.addEventListener('keydown', e => {
     e.preventDefault();
     openSearch();
   }
+  // Ctrl+Tab / Ctrl+Shift+Tab to cycle through open tabs
+  if (e.ctrlKey && e.key === 'Tab') {
+    e.preventDefault();
+    if (openTabs.length < 2) return;
+    const curIdx = openTabs.findIndex(t => t.filename === currentFilename);
+    const dir = e.shiftKey ? -1 : 1;
+    const nextIdx = (curIdx + dir + openTabs.length) % openTabs.length;
+    const nextNote = allNotes.find(n => n.filename === openTabs[nextIdx].filename);
+    if (nextNote) switchToNote(nextNote);
+  }
 });
 
 
@@ -1135,6 +1237,9 @@ async function init() {
     currentFilename = makeFilename();
   }
 
+  ensureTab(currentFilename);
+  renderTabs();
+
   // Always-on-top starts ON
   setAotLabel(true);
 
@@ -1152,10 +1257,11 @@ init();
 
 // ── Right-click context menu ──────────────────────────────────────────────────
 (function () {
-  const menu      = document.getElementById('context-menu');
-  const ctxCopy   = document.getElementById('ctx-copy');
-  const ctxCut    = document.getElementById('ctx-cut');
-  const ctxPaste  = document.getElementById('ctx-paste');
+  const menu          = document.getElementById('context-menu');
+  const ctxCopy       = document.getElementById('ctx-copy');
+  const ctxCut        = document.getElementById('ctx-cut');
+  const ctxPaste      = document.getElementById('ctx-paste');
+  const ctxSpellcheck = document.getElementById('ctx-spellcheck');
 
   function closeMenu() {
     menu.classList.remove('open');
@@ -1185,6 +1291,10 @@ init();
     // Disable Copy/Cut when nothing is selected
     ctxCopy.disabled = !hasSel;
     ctxCut.disabled  = !hasSel;
+
+    // Spellcheck toggle label
+    const spellOn = editor.getAttribute('spellcheck') === 'true';
+    ctxSpellcheck.textContent = (spellOn ? '✓ ' : '   ') + 'Spell Check';
   }
 
   // Show on right-click inside the editor
@@ -1229,6 +1339,15 @@ init();
     } catch {
       document.execCommand('paste');
     }
+  });
+
+  ctxSpellcheck.addEventListener('click', () => {
+    const isOn = editor.getAttribute('spellcheck') === 'true';
+    editor.setAttribute('spellcheck', isOn ? 'false' : 'true');
+    // Force re-render of spellcheck by briefly blurring
+    editor.blur();
+    editor.focus();
+    closeMenu();
   });
 
   // Close on any outside click, Escape, or scroll

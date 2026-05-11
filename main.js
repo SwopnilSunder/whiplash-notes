@@ -2,7 +2,7 @@
 //  main.js  –  Electron main process
 // ─────────────────────────────────────────────────────────────────────────────
 
-const { app, BrowserWindow, ipcMain, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, nativeTheme } = require('electron');
 const path = require('path');
 const fs   = require('fs');
 
@@ -103,6 +103,11 @@ ipcMain.handle('window:toggleAlwaysOnTop', () => {
   const next = !mainWindow.isAlwaysOnTop();
   mainWindow.setAlwaysOnTop(next, 'screen-saver');
   return next;
+});
+
+// Close the window
+ipcMain.handle('window:close', () => {
+  mainWindow.close();
 });
 
 // ── App lifecycle ─────────────────────────────────────────────────────────────

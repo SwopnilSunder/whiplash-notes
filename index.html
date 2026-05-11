@@ -41,12 +41,11 @@
         <button class="fmt-btn" data-cmd="strikeThrough" title="Strikethrough"><s>S</s></button>
       </div>
 
-      <!-- Right: font size + search + sidebar toggle -->
+      <!-- Right: font size + search + sidebar toggle + close -->
       <div class="toolbar-cluster" id="cluster-right">
         <input id="font-size" type="number" value="14" min="8" max="72"
                title="Font size" aria-label="Font size" />
         <button id="btn-search" class="icon-btn" title="Find in note (Ctrl+F)">
-          <!-- Magnifying glass icon -->
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
                stroke="currentColor" stroke-width="2.2"
                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -55,13 +54,20 @@
           </svg>
         </button>
         <button id="btn-sidebar" class="icon-btn" title="Toggle notes list">
-          <!-- Hamburger icon -->
           <svg width="14" height="12" viewBox="0 0 14 12" fill="none"
                stroke="currentColor" stroke-width="2"
                stroke-linecap="round" aria-hidden="true">
             <line x1="1" y1="1"  x2="13" y2="1"/>
             <line x1="1" y1="6"  x2="13" y2="6"/>
             <line x1="1" y1="11" x2="13" y2="11"/>
+          </svg>
+        </button>
+        <button id="btn-close" class="icon-btn close-btn" title="Close window">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none"
+               stroke="currentColor" stroke-width="1.8"
+               stroke-linecap="round" aria-hidden="true">
+            <line x1="2" y1="2" x2="10" y2="10"/>
+            <line x1="10" y1="2" x2="2" y2="10"/>
           </svg>
         </button>
       </div>
@@ -99,6 +105,11 @@
 
     </div><!-- /main-area -->
 
+    <!-- ── Tab bar — shows opened notes ──────────────────────────────────── -->
+    <div id="tab-bar">
+      <!-- Populated by renderer.js -->
+    </div>
+
     <!-- ── Status bar ─────────────────────────────────────────────────────── -->
     <div id="status-bar">
       <span id="status-text" title="Click to toggle Always on Top">● Always on Top</span>
@@ -118,6 +129,8 @@
     <button class="ctx-item" id="ctx-copy">Copy</button>
     <button class="ctx-item" id="ctx-cut">Cut</button>
     <button class="ctx-item" id="ctx-paste">Paste</button>
+    <div class="ctx-divider"></div>
+    <button class="ctx-item" id="ctx-spellcheck">✓ Spell Check</button>
   </div>
 
   <script src="lib/prism-bundle.js"></script>
